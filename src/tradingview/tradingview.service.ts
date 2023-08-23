@@ -16,9 +16,10 @@ export class TradingviewService {
           },
         })
         .toPromise();
-      Logger.log(res.data);
+      // Logger.log(res.data);
       return res.data;
     } catch (e) {
+      Logger.error(e);
       return {
         error: e,
       };
