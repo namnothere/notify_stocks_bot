@@ -1,1 +1,1 @@
-export { TeleService } from "./tele.service";
+export { TeleService } from './tele.service';

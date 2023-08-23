@@ -1,1 +1,1 @@
-export { TeleController } from "./tele.controller";;
+export { TeleController } from './tele.controller';

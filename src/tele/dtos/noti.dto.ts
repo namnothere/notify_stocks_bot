@@ -15,14 +15,13 @@ export class notifyDto {
 
   @IsOptional()
   @IsString()
-  ticker: string;
-  
-  @IsOptional()
-  @IsString()
-  exchange: string;
+  ticker: string = null;
 
   @IsOptional()
   @IsString()
-  interval: string = '1h';
+  exchange: string = null;
+
+  @IsOptional()
+  @IsString()
+  interval = '1h';
 }
-

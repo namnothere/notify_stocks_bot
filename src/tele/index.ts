@@ -1,1 +1,1 @@
-export * from './tele.module'
+export * from './tele.module';

@@ -1,1 +1,1 @@
-export { notifyDto } from "./noti.dto";
+export { notifyDto } from './noti.dto';

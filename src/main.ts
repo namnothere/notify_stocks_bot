@@ -1,24 +1,34 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { NgrokService } from './ngrok/ngrok.service';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
+  const context = 'MAIN';
   const app = await NestFactory.create(AppModule);
 
   const ngrokService = app.get(NgrokService);
   const ngrokUrl = await ngrokService.start();
 
-  // await app.listen(3000);
-  app.useGlobalPipes(new ValidationPipe({
-    transform: true
-  }));
-  await app.listen(process.env.LOCAL_PORT);
-  
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+    }),
+  );
+  await app.listen(process.env.LOCAL_PORT).then(() => {
+    Logger.log(
+      `Application is running on: localhost:${process.env.LOCAL_PORT}`,
+      context,
+    );
+  });
+
   if (!ngrokUrl) {
-    console.log('Ngrok setup failed. The NestJS application is still running without ngrok.');
+    Logger.log(
+      'Ngrok setup failed. The NestJS application is still running without ngrok.',
+      context,
+    );
   } else {
-    console.log('Public URL:', ngrokUrl);
+    Logger.log(`Public URL: ${ngrokUrl}`, context);
   }
 }
 bootstrap();
