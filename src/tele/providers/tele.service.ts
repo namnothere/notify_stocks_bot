@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import TelegramBot = require('node-telegram-bot-api');
 import { notifyDto } from '../dtos';
 import { TradingviewService } from 'src/tradingview/tradingview.service';
+import * as fs from 'fs';
 
 @Injectable()
 export class TeleService {
@@ -20,12 +21,32 @@ export class TeleService {
 
     this.bot.onText(/test/, (msg) => {
       this.bot.sendChatAction(msg.chat.id, 'upload_photo');
-      tvService.takeScreenshot('HOSE:VNM', '1h').then((data: any) => {
+      tvService.takeScreenshot('VNM', '1h').then(async (data: any) => {
         try {
           if (!data) throw new Error('Cannot take screenshot');
           if (data.error) throw new Error(data.error);
-          const imageURL = data.imageURL;
-          this.bot.sendPhoto(msg.chat.id, imageURL);
+          if (data.data[0].screenshot_path) {
+            data = data.data;
+            const promises = data.map((item: any) => {
+              const img = fs.readFileSync(item.screenshot_path);
+              const fileOptions = {
+                filename: String(item.screenshot_path).split('/').pop(),
+                contentType: 'application/octet-stream',
+              };  
+              return this.bot.sendPhoto(msg.chat.id, img, {}, fileOptions);
+            });
+            await Promise.all(promises);
+
+            data.map((item: any) => {
+              // check if path exists and remove it
+              fs.unlinkSync(item.screenshot_path);
+              Logger.log(`Removed ${item.screenshot_path}`);
+            })
+
+          } else {
+            const imageURL = data.imageURL;
+            this.bot.sendPhoto(msg.chat.id, imageURL);
+          }
         } catch (e) {
           Logger.error('[sendChart] Error:', e);
           this.bot.sendMessage(msg.chat.id, `[sendChart] Error: ${e}`);
@@ -38,7 +59,7 @@ export class TeleService {
     try {
       this.tvService
         .takeScreenshot(`${notiDto.ticker}`, notiDto.interval)
-        .then((data: any) => {
+        .then(async (data: any) => {
           try {
             if (data.error) {
               return this.bot.sendMessage(
@@ -46,10 +67,37 @@ export class TeleService {
                 `[sendNotify] Error: ${data.error}\n${notiDto.message}`,
               );
             }
-            const imageURL = data.imageURL;
-            this.bot.sendPhoto(process.env.PUBLISH_CHANNEL_ID, imageURL, {
-              caption: `[${notiDto.ticker}] ${notiDto.message}`,
-            });
+
+            if (
+              data.data[0].screenshot_path != null &&
+              data.data[0].screenshot_path != ''
+            ) {
+              data = data.data;
+
+              const promises = data.map((item: any) => {
+                const img = fs.readFileSync(item.screenshot_path);
+                const fileOptions = {
+                  filename: String(item.screenshot_path).split('/').pop(),
+                  contentType: 'application/octet-stream',
+                };                
+                return this.bot.sendPhoto(process.env.PUBLISH_CHANNEL_ID, img, {
+                  caption: `[${notiDto.ticker}] ${notiDto.message}`,
+                }, fileOptions);
+              });
+              await Promise.all(promises);
+
+              data.map((item: any) => {
+                // check if path exists and remove it
+                fs.unlinkSync(item.screenshot_path);
+                Logger.log(`Removed ${item.screenshot_path}`);
+              })
+
+            } else {
+              const imageURL = data.imageURL;
+              this.bot.sendPhoto(process.env.PUBLISH_CHANNEL_ID, imageURL, {
+                caption: `[${notiDto.ticker}] ${notiDto.message}`,
+              });
+            }
           } catch (e) {
             Logger.error('[sendChart] Error:', e);
             return this.bot.sendMessage(
