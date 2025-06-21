@@ -3,6 +3,14 @@ import TelegramBot = require('node-telegram-bot-api');
 import { notifyDto } from '../dtos';
 import { TradingviewService } from 'src/tradingview/tradingview.service';
 import * as fs from 'fs';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { SocksProxyAgent } from 'socks-proxy-agent';
+
+export enum TELEGRAM_PROXY {
+  HTTP = 'HTTP',
+  SOCKS5 = 'SOCKS5',
+  FALSE = 'FALSE'
+}
 
 @Injectable()
 export class TeleService {
@@ -11,8 +19,96 @@ export class TeleService {
 
   constructor(private readonly tvService: TradingviewService) {
     this.botToken = process.env.TELEGRAM_API_TOKEN;
-    this.bot = new TelegramBot(this.botToken, { polling: true });
+    // this.bot = new TelegramBot(this.botToken, { polling: true });
 
+    if (process.env.TELEGRAM_PROXY === TELEGRAM_PROXY.SOCKS5 && process.env.PROXY_FILE_PATH) {
+      const proxyFilePath = process.env.PROXY_FILE_PATH;
+      let proxies: string[] = [];
+      try {
+        proxies = fs.readFileSync(proxyFilePath, 'utf-8')
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0);
+      } catch (err) {
+        console.error('Failed to read proxy file:', err.message);
+      }
+      this.tryProxies(proxies).then(bot => {
+        this.bot = bot;
+        this.setupBot();
+      }).catch(() => {
+        console.error('No working proxy found. Bot will not start.');
+      });
+    } else if (process.env.TELEGRAM_PROXY == TELEGRAM_PROXY.HTTP && process.env.PROXY_FILE_PATH) {
+      const proxyFilePath = process.env.PROXY_FILE_PATH;
+      let proxies: string[] = [];
+      try {
+        proxies = fs.readFileSync(proxyFilePath, 'utf-8')
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0);
+      } catch (err) {
+        console.error('Failed to read proxy file:', err.message);
+      }
+      this.tryHttpProxies(proxies).then(bot => {
+        this.bot = bot;
+        this.setupBot();
+      }).catch(() => {
+        console.error('No working HTTP proxy found. Bot will not start.');
+      });
+    } else {
+      this.bot = new TelegramBot(this.botToken, {
+        polling: true
+      });
+      this.setupBot();
+    }
+  }
+
+  private async tryProxies(proxies: string[]): Promise<TelegramBot> {
+    for (const proxy of proxies) {
+      try {
+        console.log("Trying SOCKS proxy:", proxy);
+        const agent = new SocksProxyAgent(proxy);
+        const bot = new TelegramBot(this.botToken, {
+          polling: true,
+          request: { agent } as any
+        });
+        // Test connection
+        await bot.getMe();
+        console.log(`Connected using proxy: ${proxy}`);
+        return bot;
+      } catch (err) {
+        console.warn(`Proxy failed: ${proxy}`, err.message);
+      }
+    }
+    throw new Error('All proxies failed');
+  }
+
+  private async tryHttpProxies(proxies: string[]): Promise<TelegramBot> {
+    for (const proxy of proxies) {
+      try {
+        let proxyUrl = proxy;
+        if (!/^https?:\/\//i.test(proxy)) {
+          proxyUrl = 'http://' + proxy;
+        }
+        console.log("proxyUrl", proxyUrl);
+        const agent = new HttpsProxyAgent(proxyUrl);
+        console.log("agent", agent);
+        const bot = new TelegramBot(this.botToken, {
+          polling: true,
+          request: { agent } as any
+        });
+        // Test connection
+        await bot.getMe();
+        console.log(`Connected using HTTP proxy: ${proxyUrl}`);
+        return bot;
+      } catch (err) {
+        console.warn(`HTTP Proxy failed: ${proxy}`, err.message);
+      }
+    }
+    throw new Error('All HTTP proxies failed');
+  }
+
+  private setupBot() {
     this.bot.on('polling_error', Logger.error);
 
     this.bot.onText(/\/ping/, (msg) => {
@@ -21,7 +117,7 @@ export class TeleService {
 
     this.bot.onText(/test/, (msg) => {
       this.bot.sendChatAction(msg.chat.id, 'upload_photo');
-      tvService.takeScreenshot('VNM', '1h').then(async (data: any) => {
+      this.tvService.takeScreenshot('VNM', '1h').then(async (data: any) => {
         try {
           if (!data) throw new Error('Cannot take screenshot');
           if (data.error) throw new Error(data.error);
@@ -32,7 +128,7 @@ export class TeleService {
               const fileOptions = {
                 filename: String(item.screenshot_path).split('/').pop(),
                 contentType: 'application/octet-stream',
-              };  
+              };
               return this.bot.sendPhoto(msg.chat.id, img, {}, fileOptions);
             });
             await Promise.all(promises);
@@ -79,7 +175,7 @@ export class TeleService {
                 const fileOptions = {
                   filename: String(item.screenshot_path).split('/').pop(),
                   contentType: 'application/octet-stream',
-                };                
+                };
                 return this.bot.sendPhoto(process.env.PUBLISH_CHANNEL_ID, img, {
                   caption: `[${notiDto.ticker}] ${notiDto.message}`,
                 }, fileOptions);
